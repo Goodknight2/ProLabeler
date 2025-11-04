@@ -6,10 +6,10 @@ ProLabeler turns any video (local or YouTube) into a clean, ready-to-train YOLO 
 Supports multi-model ensemble detection, GPU acceleration, and automatic label formatting.
 
 ## To Do
-Add multi-class support
-Video Preview with OpenCV VideoWriter
-Drag and Drop support
-Add Tooltips in the GUI
+-  Add multi-class support
+-  Video Preview with OpenCV VideoWriter
+-  Drag and Drop support
+-  Add Tooltips in the GUI
 
 ---
 
