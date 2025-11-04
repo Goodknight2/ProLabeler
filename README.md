@@ -26,13 +26,15 @@ Supports multi-model ensemble detection, GPU acceleration, and automatic label f
 
 ##  Quick Start
 ###  Option 1: Use the compiled `.exe`
-Just run **`ProLabeler.exe`** — no installation needed.
+Just download the latest release — no installation needed.
+
 
 ###  Option 2: Run from source
 ####  Prerequisites
 - **Python 3.10+**
 - **pip** and **venv** installed
 - *(Optional)* NVIDIA GPU + CUDA 12 Toolkit for GPU acceleration
+- FFMPEG is required, but it is bundled with this program
 
   
 Create and activate a virtual environment
