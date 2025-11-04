@@ -1,0 +1,15 @@
+{
+    "video_path": "C:/Code Workspace/Ai Model/ProLabeler/yt_video_DbYlWPZqr1c_1080p.mp4",
+    "youtube_link": "",
+    "yt_res": "1080p",
+    "models": [
+        "C:/Code Workspace/Ai Model/best.onnx",
+        "C:/Code Workspace/Ai Model/Minecraftv2.onnx"
+    ],
+    "output_path": "C:/Code Workspace/Ai Model/ProLabeler/output",
+    "conf_threshold": 0.6892700729927008,
+    "iou_threshold": 0.5122262773722628,
+    "frame_step": 5,
+    "merge_iou": 0.6,
+    "use_gpu": true
+}
