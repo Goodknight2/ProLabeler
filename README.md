@@ -29,13 +29,58 @@ Supports multi-model ensemble detection, GPU acceleration, and automatic label f
 Just run **`ProLabeler.exe`** — no installation needed.
 
 ###  Option 2: Run from source
-```bash
-# Step 1: Create and activate a venv
-python -m venv pro
-pro\Scripts\activate
+####  Prerequisites
+- **Python 3.10+**
+- **pip** and **venv** installed
+- *(Optional)* NVIDIA GPU + CUDA 12 Toolkit for GPU acceleration
 
-# Step 2: Install dependencies
-pip install -r requirements.txt
+  
+Create and activate a virtual environment
+  ```
+  python -m venv pro
+  ```
+  ### Windows
+  ```
+  pro\Scripts\activate
+  ```
+  ### macOS / Linux
+  ```
+  source pro/bin/activate
+  ```
+  
 
-# Step :3 Run the GUI
+### CPU Version
+```
+   pip install .[cpu]
+```
+
+### GPU Version (requires CUDA)
+```
+   pip install .[gpu]
+```
+GPU mode uses onnxruntime-gpu for better performance.
+But you need CUDA 12.x installed
+### Launch the GUI
+```
 python App.py
+```
+### Or use the CLI version
+Run detections directly via terminal:
+```
+python Main.py --video path/to/video.mp4 \
+               --models path/to/model1.onnx path/to/model2.onnx \
+               --out ./output \
+               --conf 0.5 \
+               --iou 0.45 \
+               --frame-step 1 \
+               --merge-iou 0.6
+```
+Example (YouTube video):
+```
+python Main.py --youtube "https://www.youtube.com/watch?v=dQw4w9WgXcQ" \
+               --yt-res 1080p \
+               --models ./models/my_model.onnx \
+               --out ./output \
+               --conf 0.5
+```
+Add --cpu to force CPU mode.
