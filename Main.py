@@ -1,4 +1,4 @@
-import os
+﻿import os
 import cv2
 import argparse
 import numpy as np
@@ -6,6 +6,7 @@ import onnxruntime as ort
 import yt_dlp
 import tempfile
 import shutil
+from collections import deque
 
 # ------------------------------
 # YouTube download function
@@ -68,12 +69,28 @@ def get_device(force_cpu=False):
 def load_model(model_path, force_cpu=False):
     device = get_device(force_cpu)
     print(f"Loading model {model_path} on {device}")
+    
+    # Optimize session options
+    sess_options = ort.SessionOptions()
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_options.intra_op_num_threads = 4  # Adjust based on your CPU cores
+    sess_options.inter_op_num_threads = 4
+    sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+    
     try:
-        session = ort.InferenceSession(model_path, providers=[device, "CPUExecutionProvider"])
+        session = ort.InferenceSession(
+            model_path, 
+            sess_options=sess_options,
+            providers=[device, "CPUExecutionProvider"]
+        )
     except Exception as e:
         print(f" Failed to load on {device}: {e}")
         print("Retrying on CPU...")
-        session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        session = ort.InferenceSession(
+            model_path, 
+            sess_options=sess_options,
+            providers=["CPUExecutionProvider"]
+        )
     return session
 
 # ------------------------------
@@ -112,6 +129,7 @@ def postprocess_1x5x8400(preds, conf_thresh=0.25):
             cls = 0
             boxes.append([x1, y1, x2, y2, conf, cls])
     return boxes
+
 # ------------------------------
 # Rescale boxes back to original frame
 # ------------------------------
@@ -194,6 +212,39 @@ def merge_boxes(boxes, merge_iou=0.5):
                 used.add(j)
         merged.append([x1, y1, x2, y2, conf, cls])
     return merged
+
+# ------------------------------
+# Perceptual Hash for duplicate detection
+# ------------------------------
+def compute_phash(frame, hash_size=8):
+    """Compute perceptual hash of a frame"""
+    # Convert to grayscale and resize to hash_size+1 to allow for DCT
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    resized = cv2.resize(gray, (hash_size + 1, hash_size))
+    
+    # Compute horizontal gradient (simple difference hash)
+    diff = resized[:, 1:] > resized[:, :-1]
+    
+    # Convert to integer hash
+    return sum([2 ** i for (i, v) in enumerate(diff.flatten()) if v])
+
+def hamming_distance(hash1, hash2):
+    """Calculate Hamming distance between two hashes"""
+    return bin(hash1 ^ hash2).count('1')
+
+def is_similar_to_recent(frame, recent_hashes, similarity_threshold=5):
+    """
+    Check if frame is similar to any recent frame.
+    similarity_threshold: lower = stricter (0 = identical, 64 = completely different)
+    """
+    current_hash = compute_phash(frame)
+    
+    for prev_hash in recent_hashes:
+        if hamming_distance(current_hash, prev_hash) <= similarity_threshold:
+            return True
+    
+    return False
+
 # ------------------------------
 # Save YOLO-format labels
 # ------------------------------
@@ -211,7 +262,7 @@ def save_labels(boxes, img_w, img_h, save_path):
             f.write("\n".join(lines))
 
 # ------------------------------
-# Main with cancel + progress
+# Main with cancel + progress + duplicate detection
 # ------------------------------
 def main(args=None, progress_callback=None, detect_progress_callback=None, cancel_check=None):
 
@@ -236,10 +287,19 @@ def main(args=None, progress_callback=None, detect_progress_callback=None, cance
             parser.add_argument("--merge-iou", type=float, default=0.5)
             parser.add_argument("--frame-step", type=int, default=1)
             parser.add_argument("--cpu", action="store_true")
+            parser.add_argument("--similarity-threshold", type=int, default=5, 
+                              help="Similarity threshold for duplicate detection (0-64, lower=stricter)")
+            parser.add_argument("--history-size", type=int, default=30,
+                              help="Number of recent frames to compare against")
             args = parser.parse_args()
         else:
             from types import SimpleNamespace
             args = SimpleNamespace(**args)
+            # Set defaults for new parameters if not provided
+            if not hasattr(args, 'similarity_threshold'):
+                args.similarity_threshold = 5
+            if not hasattr(args, 'history_size'):
+                args.history_size = 30
 
         # Source setup
         video_path = None
@@ -256,12 +316,17 @@ def main(args=None, progress_callback=None, detect_progress_callback=None, cance
 
         models = [load_model(m, force_cpu=args.cpu) for m in args.models]
         print(f"Loaded {len(models)} models.")
+        print(f"Duplicate detection enabled: similarity_threshold={args.similarity_threshold}, history_size={args.history_size}")
 
         cap = cv2.VideoCapture(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
         frame_idx = 0
         saved_count = 0
+        skipped_duplicates = 0
+
+        # Keep track of recent frame hashes
+        recent_hashes = deque(maxlen=args.history_size)
 
         while True:
             if should_cancel():
@@ -287,17 +352,29 @@ def main(args=None, progress_callback=None, detect_progress_callback=None, cance
             img_h, img_w = frame.shape[:2]
             ensemble_boxes = []
 
-            for model in models:
-                if should_cancel():
-                    print("Detection canceled during model inference.")
-                    break
+            # Preprocess once for all models
+            inp, scale, pad_size = preprocess_frame(frame)
 
+            # Run models in parallel using ThreadPoolExecutor
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            def run_model(model):
+                if should_cancel():
+                    return []
                 input_name = model.get_inputs()[0].name
-                inp, scale, pad_size = preprocess_frame(frame)
                 pred = model.run(None, {input_name: inp})
                 boxes = postprocess_1x5x8400(pred, conf_thresh=args.conf)
                 boxes = rescale_boxes(boxes, scale, pad_size, img_w, img_h)
-                ensemble_boxes.extend(boxes)
+                return boxes
+            
+            # Use thread pool for parallel inference
+            with ThreadPoolExecutor(max_workers=len(models)) as executor:
+                futures = [executor.submit(run_model, model) for model in models]
+                for future in as_completed(futures):
+                    if should_cancel():
+                        print("Detection canceled during model inference.")
+                        break
+                    ensemble_boxes.extend(future.result())
 
             if should_cancel():
                 break
@@ -305,6 +382,16 @@ def main(args=None, progress_callback=None, detect_progress_callback=None, cance
             final_boxes = merge_boxes(ensemble_boxes, merge_iou=args.merge_iou)
 
             if final_boxes:
+                # Check if this frame is similar to recent frames
+                if is_similar_to_recent(frame, recent_hashes, args.similarity_threshold):
+                    skipped_duplicates += 1
+                    frame_idx += 1
+                    continue
+                
+                # Add current frame hash to history
+                current_hash = compute_phash(frame)
+                recent_hashes.append(current_hash)
+
                 if args.out_res and args.out_res.lower() != "off":
                     try:
                         w, h = map(int, args.out_res.lower().split("x"))
@@ -329,6 +416,7 @@ def main(args=None, progress_callback=None, detect_progress_callback=None, cance
 
         cap.release()
         print(f"Finished. Saved {saved_count} frames with labels to {args.out}")
+        print(f"Skipped {skipped_duplicates} duplicate/similar frames")
 
     finally:
         # Cleanup temporary YouTube file

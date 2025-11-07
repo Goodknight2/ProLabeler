@@ -8,13 +8,44 @@ import threading
 
 CONFIG_FILE = "config.json"
 
+class ToolTip:
+    """Creates a tooltip for a given widget"""
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+    
+    def show_tooltip(self, event=None):
+        if self.tooltip_window or not self.text:
+            return
+        x, y, _, _ = self.widget.bbox("insert") if hasattr(self.widget, 'bbox') else (0, 0, 0, 0)
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+        
+        self.tooltip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        
+        label = tk.Label(tw, text=self.text, justify='left',
+                        background="#2b2b2b", foreground="#ffffff",
+                        relief='solid', borderwidth=1,
+                        font=("Segoe UI", 9), padx=8, pady=6)
+        label.pack()
+    
+    def hide_tooltip(self, event=None):
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
 
         self.title("ProLabeler GUI")
-        self.geometry("950x620")
-        self.minsize(900, 600)
+        self.geometry("950x650")
+        self.minsize(900, 630)
 
         sv_ttk.set_theme("dark")  # Enable Sun Valley Dark Theme
 
@@ -32,51 +63,87 @@ class App(tk.Tk):
         self.right_frame.grid(row=0, column=1, sticky="nsew")
 
         # --- Left side ---
-        ttk.Label(self.left_frame, text="Video Input").grid(row=0, column=0, sticky="w")
+        video_label = ttk.Label(self.left_frame, text="Video Input")
+        video_label.grid(row=0, column=0, sticky="w")
+        ToolTip(video_label, "Select a local video file to process")
+        
         self.video_path = tk.StringVar()
         video_frame = ttk.Frame(self.left_frame)
         video_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         self.video_entry = ttk.Entry(video_frame, textvariable=self.video_path)
         self.video_entry.pack(side="left", fill="x", expand=True)
-        ttk.Button(video_frame, text="Browse", command=self.browse_video).pack(side="right", padx=5)
+        ToolTip(self.video_entry, "Path to your video file (MP4, AVI, MOV)")
+        
+        browse_btn = ttk.Button(video_frame, text="Browse", command=self.browse_video)
+        browse_btn.pack(side="right", padx=5)
+        ToolTip(browse_btn, "Browse for a video file on your computer")
 
-        ttk.Label(self.left_frame, text="YouTube Link (optional)").grid(row=2, column=0, sticky="w")
+        yt_label = ttk.Label(self.left_frame, text="YouTube Link (optional)")
+        yt_label.grid(row=2, column=0, sticky="w")
+        ToolTip(yt_label, "Download and process a video from YouTube instead")
+        
         self.youtube_link = tk.StringVar()
-        ttk.Entry(self.left_frame, textvariable=self.youtube_link).grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        yt_entry = ttk.Entry(self.left_frame, textvariable=self.youtube_link)
+        yt_entry.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        ToolTip(yt_entry, "Paste a YouTube URL here (overrides video input)")
 
-        ttk.Label(self.left_frame, text="YouTube Resolution").grid(row=4, column=0, sticky="w")
+        yt_res_label = ttk.Label(self.left_frame, text="YouTube Resolution")
+        yt_res_label.grid(row=4, column=0, sticky="w")
+        ToolTip(yt_res_label, "Maximum resolution to download from YouTube")
+        
         self.yt_res = ttk.Combobox(self.left_frame, values=["360p", "480p", "720p", "1080p", "1440p", "2160p"])
         self.yt_res.current(3)
         self.yt_res.grid(row=5, column=0, sticky="ew", pady=(0, 15))
+        ToolTip(self.yt_res, "Higher resolution = better quality but larger download")
 
-        ttk.Label(self.left_frame, text="Output Image Resolution").grid(row=6, column=0, sticky="w")
+        out_res_label = ttk.Label(self.left_frame, text="Output Image Resolution")
+        out_res_label.grid(row=6, column=0, sticky="w")
+        ToolTip(out_res_label, "Resize saved images (Off = keep original size)")
+        
         self.out_res = ttk.Combobox(
             self.left_frame,
             values=["Off", "640x640", "320x320", "1280x1280"],
         )
         self.out_res.current(0)
         self.out_res.grid(row=7, column=0, sticky="ew", pady=(0, 15))
+        ToolTip(self.out_res, "640x640 is standard for YOLOv8 training")
 
-
-        ttk.Label(self.left_frame, text="ONNX Models (multiple allowed)").grid(row=9, column=0, sticky="w")
+        models_label = ttk.Label(self.left_frame, text="ONNX Models (multiple allowed)")
+        models_label.grid(row=9, column=0, sticky="w")
+        ToolTip(models_label, "Add one or more YOLO ONNX models for detection")
+        
         model_frame = ttk.Frame(self.left_frame)
         model_frame.grid(row=10, column=0, sticky="ew", pady=(0, 10))
         self.models_listbox = tk.Listbox(model_frame, height=5, selectmode="multiple", bg="#1e1e1e", fg="#f0f0f0")
         self.models_listbox.pack(side="left", fill="both", expand=True)
+        
         ttk.Scrollbar(model_frame, command=self.models_listbox.yview).pack(side="right", fill="y")
         
         model_button_frame = ttk.Frame(self.left_frame)
         model_button_frame.grid(row=11, column=0, sticky="ew", pady=(0, 15))
-        ttk.Button(model_button_frame, text="Add Model", command=self.add_model).pack(side="left", fill="x", expand=True, padx=(0, 5))
-        ttk.Button(model_button_frame, text="Remove Selected", command=self.remove_model).pack(side="left", fill="x", expand=True)
+        
+        add_model_btn = ttk.Button(model_button_frame, text="Add Model", command=self.add_model)
+        add_model_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ToolTip(add_model_btn, "Browse for .onnx model files")
+        
+        remove_model_btn = ttk.Button(model_button_frame, text="Remove Selected", command=self.remove_model)
+        remove_model_btn.pack(side="left", fill="x", expand=True)
+        ToolTip(remove_model_btn, "Remove selected models from the list")
 
-        ttk.Label(self.left_frame, text="Output Folder").grid(row=12, column=0, sticky="w")
+        output_label = ttk.Label(self.left_frame, text="Output Folder")
+        output_label.grid(row=12, column=0, sticky="w")
+        ToolTip(output_label, "Where to save labeled images and annotations")
+        
         self.output_path = tk.StringVar()
         output_frame = ttk.Frame(self.left_frame)
         output_frame.grid(row=13, column=0, sticky="ew", pady=(0, 15))
         self.output_entry = ttk.Entry(output_frame, textvariable=self.output_path)
         self.output_entry.pack(side="left", fill="x", expand=True)
-        ttk.Button(output_frame, text="Browse", command=self.browse_output).pack(side="right", padx=5)
+        ToolTip(self.output_entry, "Automatically creates images and labels subfolders")
+        
+        output_browse_btn = ttk.Button(output_frame, text="Browse", command=self.browse_output)
+        output_browse_btn.pack(side="right", padx=5)
+        ToolTip(output_browse_btn, "Select output directory")
 
         # --- Right side ---
         ttk.Label(self.right_frame, text="Settings").grid(row=0, column=0, sticky="w")
@@ -86,16 +153,29 @@ class App(tk.Tk):
         self.frame_step = tk.IntVar(value=1)
         self.merge_iou = tk.DoubleVar(value=0.6)
         self.use_gpu = tk.BooleanVar(value=True)
+        self.similarity_threshold = tk.IntVar(value=5)
+        self.history_size = tk.IntVar(value=30)
 
-        settings = [
-            ("Confidence Threshold", self.conf_threshold, 0.01, 1.0, 0.01),
-            ("IoU Threshold", self.iou_threshold, 0.01, 1.0, 0.01),
-            ("Frame Step", self.frame_step, 1, 30, 1),
-            ("Box Merge IoU", self.merge_iou, 0.01, 1.0, 0.01),
+        # Settings with tooltips
+        settings_config = [
+            ("Confidence Threshold", self.conf_threshold, 0.01, 1.0, 0.01, 
+             "Minimum confidence score to keep a detection\nHigher = fewer but more confident detections"),
+            ("IoU Threshold", self.iou_threshold, 0.01, 1.0, 0.01,
+             "IoU threshold for Non-Maximum Suppression\nHigher = more overlapping boxes allowed"),
+            ("Frame Step", self.frame_step, 1, 30, 1,
+             "Process every frame\n1 = every frame, 2 = every other frame, etc."),
+            ("Box Merge IoU", self.merge_iou, 0.01, 1.0, 0.01,
+             "IoU threshold for merging boxes from multiple models\nHigher = only merge very overlapping boxes"),
+            ("Duplicate Skip Threshold", self.similarity_threshold, 0, 64, 1,
+             "How similar frames can be before skipping\n0 = identical only, 5 = very similar (recommended)\n10-15 = Kinda similar, 20+ = Meh"),
+            ("History Size", self.history_size, 5, 100, 1,
+             "Number of frames to compare against\nHigher = catches duplicates further apart\nLower = faster processing"),
         ]
 
-        for i, (label, var, a, b, step) in enumerate(settings, start=1):
-            ttk.Label(self.right_frame, text=label).grid(row=i, column=0, sticky="w")
+        for i, (label, var, a, b, step, tooltip) in enumerate(settings_config, start=1):
+            label_widget = ttk.Label(self.right_frame, text=label)
+            label_widget.grid(row=i, column=0, sticky="w")
+            ToolTip(label_widget, tooltip)
 
             if isinstance(var, tk.DoubleVar):
                 scale_frame = ttk.Frame(self.right_frame)
@@ -104,6 +184,7 @@ class App(tk.Tk):
                 # The scale itself
                 scale = ttk.Scale(scale_frame, variable=var, from_=a, to=b, orient="horizontal", length=150)
                 scale.pack(side="left", fill="x", expand=True)
+                ToolTip(scale, tooltip)
 
                 # Value label that updates live
                 val_label = ttk.Label(scale_frame, text=f"{var.get():.2f}", width=5)
@@ -115,29 +196,34 @@ class App(tk.Tk):
                 scale.config(command=update_label)
 
             else:
-                ttk.Spinbox(self.right_frame, from_=a, to=b, textvariable=var, width=5).grid(
-                    row=i, column=1, sticky="ew", padx=(10, 0)
-                )
+                spinbox = ttk.Spinbox(self.right_frame, from_=a, to=b, textvariable=var, width=5)
+                spinbox.grid(row=i, column=1, sticky="ew", padx=(10, 0))
+                ToolTip(spinbox, tooltip)
 
-
-        ttk.Checkbutton(
+        gpu_check = ttk.Checkbutton(
             self.right_frame,
             text="Use GPU (fallback to CPU if unavailable)",
             variable=self.use_gpu,
-        ).grid(row=6, column=0, columnspan=2, pady=(15, 10))
+        )
+        gpu_check.grid(row=7, column=0, columnspan=2, pady=(15, 10))
+        ToolTip(gpu_check, "Use CUDA GPU acceleration if available\nAutomatically falls back to CPU if GPU not detected")
 
-        ttk.Button(self.right_frame, text="Save Config", command=self.save_config).grid(
-            row=7, column=0, columnspan=2, sticky="ew", pady=(5, 5)
-        )
+        save_config_btn = ttk.Button(self.right_frame, text="Save Config", command=self.save_config)
+        save_config_btn.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 5))
+        ToolTip(save_config_btn, "Save current settings to config.json\nSettings will load automatically next time")
+        
         # Run Detection Button
-        ttk.Button(self.right_frame, text="Run Detection", command=self.run_detection).grid(
-            row=8, column=0, columnspan=2, sticky="ew", pady=(5, 10)
-        )
+        run_btn = ttk.Button(self.right_frame, text="Run Detection", command=self.run_detection)
+        run_btn.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(5, 10))
+        ToolTip(run_btn, "Start processing the video with current settings")
 
         # Log Output Label + Box
-        ttk.Label(self.right_frame, text="Log Output").grid(row=9, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        log_label = ttk.Label(self.right_frame, text="Log Output")
+        log_label.grid(row=10, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        ToolTip(log_label, "Real-time output from the detection process")
+        
         self.log_text = tk.Text(self.right_frame, height=8, wrap="word")
-        self.log_text.grid(row=10, column=0, columnspan=2, sticky="nsew", pady=(0, 5))
+        self.log_text.grid(row=11, column=0, columnspan=2, sticky="nsew", pady=(0, 5))
         self.log_text.configure(bg="#1e1e1e", fg="#f0f0f0", insertbackground="#f0f0f0", selectbackground="#3a3a3a")
 
         # Status Indicator (moved below log box)
@@ -147,7 +233,9 @@ class App(tk.Tk):
             foreground="#9FEF9F",  # light green
             font=("Segoe UI", 10, "bold")
         )
-        self.status_label.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(5, 5))
+        self.status_label.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(5, 5))
+        ToolTip(self.status_label, "Current processing status")
+        
         # Progress bar (hidden until used)
         self.progress_var = tk.DoubleVar(value=0)
         self.progress_bar = ttk.Progressbar(
@@ -172,18 +260,17 @@ class App(tk.Tk):
 
         # ETA Label for detection
         self.eta_label = ttk.Label(self.right_frame, text="")
-        self.eta_label.grid(row=12, column=0, columnspan=2, sticky="ew")
+        self.eta_label.grid(row=13, column=0, columnspan=2, sticky="ew")
 
         # Cancel Button
         self.cancel_flag = False
         self.cancel_button = ttk.Button(self.right_frame, text="Cancel Detection", command=self.cancel_detection)
-        self.cancel_button.grid(row=13, column=0, columnspan=2, sticky="ew", pady=(5, 15))
+        self.cancel_button.grid(row=14, column=0, columnspan=2, sticky="ew", pady=(5, 15))
         self.cancel_button.grid_remove()
-
-
+        ToolTip(self.cancel_button, "Stop the detection process early")
 
         # Let the log box expand properly
-        self.right_frame.rowconfigure(10, weight=1)
+        self.right_frame.rowconfigure(11, weight=1)
 
         self.load_config()
 
@@ -270,6 +357,8 @@ class App(tk.Tk):
             "frame_step": self.frame_step.get(),
             "merge_iou": self.merge_iou.get(),
             "use_gpu": self.use_gpu.get(),
+            "similarity_threshold": self.similarity_threshold.get(),
+            "history_size": self.history_size.get(),
         }
         with open(CONFIG_FILE, "w") as f:
             json.dump(config, f, indent=4)
@@ -295,6 +384,8 @@ class App(tk.Tk):
             self.frame_step.set(config.get("frame_step", 1))
             self.merge_iou.set(config.get("merge_iou", 0.6))
             self.use_gpu.set(config.get("use_gpu", True))
+            self.similarity_threshold.set(config.get("similarity_threshold", 5))
+            self.history_size.set(config.get("history_size", 30))
 
     class TextRedirector:
         """Redirects print() output to a Tkinter Text widget in real time."""
@@ -333,7 +424,7 @@ class App(tk.Tk):
             "video": self.video_path.get() or None,
             "youtube": self.youtube_link.get() or None,
             "yt_res": self.yt_res.get(),
-            "out_res": self.out_res.get() if self.out_res.get().lower() != "off" else None,  # 🆕 Add this
+            "out_res": self.out_res.get() if self.out_res.get().lower() != "off" else None,
             "models": models,
             "out": self.output_path.get() or "./output",
             "conf": self.conf_threshold.get(),
@@ -341,6 +432,8 @@ class App(tk.Tk):
             "frame_step": self.frame_step.get(),
             "merge_iou": self.merge_iou.get(),
             "cpu": not self.use_gpu.get(),
+            "similarity_threshold": self.similarity_threshold.get(),
+            "history_size": self.history_size.get(),
         }
 
         threading.Thread(target=self.run_internal_main, args=(args,), daemon=True).start()
