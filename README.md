@@ -1,5 +1,5 @@
 # ProLabeler
-#  ProLabeler v1.0
+#  ProLabeler v1.1
 **Smart, automatic video-to-dataset tool for YOLO models (ONNX format)**
 
 ProLabeler turns any video (local or YouTube) into a clean, ready-to-train YOLO dataset.  
@@ -9,7 +9,6 @@ Supports multi-model ensemble detection, GPU acceleration, and automatic label f
 -  Add multi-class support
 -  Video Preview with OpenCV VideoWriter
 -  Drag and Drop support
--  Add Tooltips in the GUI
 
 ---
 
@@ -21,6 +20,7 @@ Supports multi-model ensemble detection, GPU acceleration, and automatic label f
 -  Automatic label scaling and aspect-safe resizing
 -  Clean GUI built with **Tkinter + Sun Valley ttk**
 -  Save & load settings (`config.json`)
+-  Auto Skips simmilar frames
 
 ---
 
