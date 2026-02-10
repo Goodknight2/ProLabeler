@@ -4,6 +4,7 @@
 
 ProLabeler turns any video (local or YouTube) into a clean, ready-to-train YOLO dataset.  
 Supports multi-model ensemble detection, GPU acceleration, and automatic label formatting.
+## Better version by Whiz here  [Label-Forge](https://github.com/wh-iz/whiz-Label-Forge)
 
 ## To Do
 -  Add multi-class support
